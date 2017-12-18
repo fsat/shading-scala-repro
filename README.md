@@ -8,11 +8,21 @@ Run the following to reproduce the problem.
 sbt hello/compile
 ```
 
+Conversely, the following runs just fine.
+
+```
+sbt boom/run
+```
+
 ## The setup
 
 The project `hello` is a simple hello-world like project, which depends on the shaded Akka DNS.
 
 The shaded Akka DNS is built using `shaded-akka-dns` project which will product a `jar` file containing _only_ shaded classes from the Akka DNS library (i.e. transitive dependencies are not included). [SBT Assembly](https://github.com/sbt/sbt-assembly) is used to package and shade the Akka DNS library. SBT Assembly also provides the means to post-process the `reference.conf` contained within Akka DNS jar to ensure the shaded classes is used in the config file.
+
+Similarly, the project `boom` is a simple hello-world like project, which depends on the shaded Log4J.
+
+The shaded Log4J is built using `shaded-log4j` project which will product a `jar` file containing _only_ shaded classes from the Log4J library (i.e. transitive dependencies are not included).
 
 ## The problem
 

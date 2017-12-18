@@ -7,8 +7,9 @@ import sbtassembly.MergeStrategy
 lazy val Versions = new {
   val akka                      = "2.4.12" // First version cross-compiled to 2.12
   val akkaDns                   = "2.4.2"
+  val log4j                     = "1.2.17"
   val scala211                  = "2.11.11"
-  val scala212                  = "2.12.3"  
+  val scala212                  = "2.12.3"
 }
 
 lazy val scalaVersionMajor = SettingKey[String]("scala-version-major")
@@ -19,7 +20,8 @@ scalaVersionMajor in ThisBuild := (scalaVersion.value).split('.').dropRight(1).m
 lazy val root = project
   .in(file("."))
   .aggregate(
-    hello
+    hello,
+    boom
   )
 
 lazy val shadedAkkaDns = Project(id = "shaded-akka-dns", base = file("shaded-akka-dns"))
@@ -107,15 +109,78 @@ lazy val shadedAkkaDns = Project(id = "shaded-akka-dns", base = file("shaded-akk
     }
   )
 
+lazy val shadedLog4J = Project(id = "shaded-log4j", base = file("shaded-log4j"))
+  .settings(
+    organization := "com.lightbend.rp",
+    organizationName := "Lightbend, Inc.",
+    scalaVersion := Versions.scala211,
+    crossScalaVersions := Vector(Versions.scala211, Versions.scala212),
+    test in assembly := {},
+    assemblyOption in assembly ~= {
+      _.copy(includeScala = false)
+    },
+    assemblyJarName in assembly := {
+      s"${name.value}-${scalaVersionMajor.value}-${version.value}.jar"
+    },
+    target in assembly := {
+      baseDirectory.value / "target" / scalaVersionMajor.value
+    },
+    packageBin in Compile := (assembly in Compile).value,
+    addArtifact(Artifact("shaded-akka-dns", "assembly"), sbtassembly.AssemblyKeys.assembly),
+    assemblyShadeRules in assembly := Seq(
+      ShadeRule.rename("org.apache.log4j**" -> "com.lightbend.rp.internal.@0").inAll
+    ),
+    libraryDependencies ++= Seq(
+      "log4j"            % "log4j"            % Versions.log4j
+    ),
+    assemblyExcludedJars in assembly := {
+      (fullClasspath in assembly).value.filterNot(_.data.getName.startsWith("log4j-"))
+    },
+    pomPostProcess := { (node: XmlNode) =>
+      new RuleTransformer(
+        new RewriteRule {
+          override def transform(node: XmlNode): XmlNodeSeq = node match {
+            case e: Elem if e.label == "dependency" =>
+              val organization = get(e, "groupId")
+              val artifact = get(e, "artifactId")
+              val version = e.child.filter(_.label == "version").flatMap(_.text).mkString
+
+              if (organization == "log4j" && artifact.startsWith("log4j"))
+                Comment(s"provided dependency $organization#$artifact;$version has been omitted")
+              else
+                node
+            case _ => node
+          }
+
+          private def get(current: Elem, childElementName: String): String =
+            current.child.filter(_.label == childElementName).flatMap(_.text).mkString
+        })
+        .transform(node)
+        .head
+    }
+  )
+
+
 lazy val hello = project
   .in(file("hello"))
   .settings(
+    scalaVersion := Versions.scala211,
     unmanagedJars in Compile ++= Seq(
       (assembly in Compile in shadedAkkaDns).value
     ),
     libraryDependencies ++= Seq(
       "com.typesafe.akka"        %% "akka-actor"          % Versions.akka    % "provided",
       "com.typesafe.akka"        %% "akka-testkit"        % Versions.akka    % "test",
+    ),
+    crossScalaVersions := Vector(Versions.scala211, Versions.scala212)
+  )
+
+lazy val boom = project
+  .in(file("boom"))
+  .settings(
+    scalaVersion := Versions.scala211,
+    unmanagedJars in Compile ++= Seq(
+      (assembly in Compile in shadedLog4J).value
     ),
     crossScalaVersions := Vector(Versions.scala211, Versions.scala212)
   )
